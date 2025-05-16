@@ -1,2 +1,3 @@
-# marketing-saas
-Fully automated Docker-based marketing SaaS for client scaling
+# Marketing SaaS Docker Stack
+
+Run `docker-compose up -d` to start the platform. Update domain names and email addresses as needed.

@@ -1,0 +1,124 @@
+version: "3.8"
+
+services:
+  traefik:
+    image: traefik:v2.9
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.myresolver.acme.tlschallenge=true"
+      - "--certificatesresolvers.myresolver.acme.email=admin@example.com"
+      - "--certificatesresolvers.myresolver.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "./traefik/letsencrypt:/letsencrypt"
+    restart: always
+
+  n8n:
+    image: n8nio/n8n
+    environment:
+      - GENERIC_TIMEZONE=Europe/London
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./n8n:/home/node/.n8n
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.n8n.rule=Host(`n8n.yourdomain.com`)"
+      - "traefik.http.routers.n8n.entrypoints=websecure"
+      - "traefik.http.routers.n8n.tls.certresolver=myresolver"
+
+  postiz:
+    image: kaymen99/dittosend:latest
+    environment:
+      - PORT=3001
+    ports:
+      - "3001:3001"
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.postiz.rule=Host(`postiz.yourdomain.com`)"
+      - "traefik.http.routers.postiz.entrypoints=websecure"
+      - "traefik.http.routers.postiz.tls.certresolver=myresolver"
+
+  mixpost:
+    image: johndatserakis/mixpost:latest
+    environment:
+      - MIXPOST_APP_URL=https://mixpost.yourdomain.com
+    ports:
+      - "8080:80"
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mixpost.rule=Host(`mixpost.yourdomain.com`)"
+      - "traefik.http.routers.mixpost.entrypoints=websecure"
+      - "traefik.http.routers.mixpost.tls.certresolver=myresolver"
+
+  espocrm:
+    image: espocrm/espocrm
+    environment:
+      - ESPOCRM_DATABASE_DRIVER=mysql
+      - ESPOCRM_DATABASE_HOST=db
+      - ESPOCRM_DATABASE_NAME=espocrm
+      - ESPOCRM_DATABASE_USER=espocrm
+      - ESPOCRM_DATABASE_PASSWORD=espopass
+    depends_on:
+      - db
+    ports:
+      - "8888:80"
+    volumes:
+      - ./espocrm:/var/www/html
+    restart: always
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.espocrm.rule=Host(`crm.yourdomain.com`)"
+      - "traefik.http.routers.espocrm.entrypoints=websecure"
+      - "traefik.http.routers.espocrm.tls.certresolver=myresolver"
+
+  db:
+    image: mariadb
+    restart: always
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpass
+      - MYSQL_DATABASE=espocrm
+      - MYSQL_USER=espocrm
+      - MYSQL_PASSWORD=espopass
+    volumes:
+      - ./db:/var/lib/mysql
+
+  posthog:
+    image: posthog/posthog:latest
+    depends_on:
+      - posthog-db
+      - posthog-redis
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgres://posthog:posthog@posthog-db:5432/posthog
+      - REDIS_URL=redis://posthog-redis:6379
+      - SECRET_KEY=a-very-secret-key-change-me
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.posthog.rule=Host(`analytics.yourdomain.com`)"
+      - "traefik.http.routers.posthog.entrypoints=websecure"
+      - "traefik.http.routers.posthog.tls.certresolver=myresolver"
+
+  posthog-db:
+    image: postgres:13
+    environment:
+      - POSTGRES_DB=posthog
+      - POSTGRES_USER=posthog
+      - POSTGRES_PASSWORD=posthog
+    volumes:
+      - ./posthog-db:/var/lib/postgresql/data
+
+  posthog-redis:
+    image: redis:6
+    volumes:
+      - ./posthog-redis:/data
